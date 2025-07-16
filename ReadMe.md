@@ -1,6 +1,6 @@
 🎧 PlaylistConverter
 Smart playlist sync tool for MusicBee and Poweramp.
-Automatically detects changes in .m3u and .m3u8 files, converts absolute paths to relative paths, maintains backups, and keeps your Android and Library folders in sync — all in real time.
+Automatically detects changes in .m3u and .m3u8 files, converts paths, maintains backups, and keeps your Android and Library folders in sync — all in real time.
 
 🚀 Features
 - 🧠 Hash-based change detection — only processes playlists when content changes
@@ -11,9 +11,26 @@ Automatically detects changes in .m3u and .m3u8 files, converts absolute paths t
 - 🧹 Extension normalization — renames .m3u8 to .m3u for compatibility
 - 🖼️ System tray icon — optional GUI with right-click menu
 - ⚙️ Autostart support — can run silently on system boot
+- 🧩 Interactive configuration — no need to edit the script manually
+- 🔄 Path conversion — transforms absolute paths into relative ones for portability
+
+📁 What is Path Conversion?
+Many playlist editors (like MusicBee) save tracks using absolute paths, such as:
+C:\Users\Andre\Music\Rock\song.mp3
+
+
+But Android apps like Poweramp expect relative paths, like:
+Rock/song.mp3
+
+
+This script automatically converts absolute paths to relative ones so your playlists work seamlessly across devices — no broken links, no manual editing.
+✅ Why it matters:
+- Makes playlists portable between PC and phone
+- Avoids hardcoded drive letters or user folders
+- Ensures Poweramp can read and play the tracks
 
 📁 Folder Structure
-Playlists/
+PlaylistsAndre/
 ├── Android/        # Poweramp playlists
 ├── Library/        # MusicBee playlists
 ├── Conversion/     # Latest converted playlists
@@ -26,21 +43,27 @@ Playlists/
 🛠 Setup
 - Install dependencies:
 pip install watchdog pillow pystray
-- Place your .m3u or .m3u8 playlists in Android/ or Library/
 - Run the script:
 - Double-click PlaylistConverter.pyw
-- Or add it to Windows Startup folder for autostart
+- Follow the prompts:
+- 📂 Base folder path
+- 🔢 Max backups per playlist
+- ⏳ Process delay (seconds)
+- 🕒 Block duration after push (seconds)
+- Optional: Add a custom tray icon
+Save playlist_icon.ico next to your script
 
-🖥️ Tray Menu (optional)
+🖥️ Tray Menu
 If enabled, the tray icon provides:
 - ▶️ Run Sync — manually trigger sync
 - 📤 Quit — stop the app and exit gracefully
 
-⚙️ Configuration
-You can tweak these values at the top of the script:
-MAX_BACKUPS = 5         # Backups per playlist
-PROCESS_DELAY = 2       # Debounce time in seconds
-BLOCK_DURATION = 3      # Ignore window after push
+⚙️ Configuration Options
+| Option | Description | Default | 
+| Base Folder | Root folder for all playlist operations | — | 
+| Max Backups | Number of backups per playlist | 10 | 
+| Process Delay | Debounce time to avoid rapid reprocessing | 2 sec | 
+| Block Duration | Ignore window after pushing a file | 2 sec | 
 
 
 
@@ -60,11 +83,7 @@ start "" "C:\Path\To\PlaylistConverter.pyw"
 
 
 
-🧠 Notes
-- .m3u8 files are automatically renamed to .m3u in Android folder
-- Only changed playlists are processed — no duplicates
-- Backups are stored separately and rotated automatically
-
-Credits:
-<a target="_blank" href="https://icons8.com/icon/mjtxCfHlksr0/playlist">Playlist</a> icon by <a target="_blank" href="https://icons8.com">Icons8</a>
+🎨 Icon Credit
+Tray icon used with permission from:
+<a href="https://www.flaticon.com/free-icons/playlist" title="playlist icons">Playlist icons created by Freepik - Flaticon</a>
 

@@ -7,98 +7,19 @@ import threading
 import sys
 import platform
 import json
-import subprocess
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pystray import Icon, MenuItem as Item, Menu
 from PIL import Image
+import subprocess
+
+# === Configuration ===
+#PROCESS_DELAY = 2       # Debounce time to avoid rapid reprocessing
+#BLOCK_DURATION = 3      # Ignore window after pushing a file
 
 # === Config File Path ===
 config_path = os.path.join(os.path.dirname(__file__), "config.json")
-
-# === Load Config ===
-def load_config():
-    try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
-        print("✅ Configuration loaded from config.json")
-        return config
-    except Exception as e:
-        print(f"⚠️ No valid config found — entering setup: {e}")
-        return None
-
-def save_config(config):
-    try:
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=4)
-        log("💾 Configuration saved to config.json")
-    except Exception as e:
-        log(f"🚨 Failed to save config: {e}")
-
-def get_user_config():
-    print("🎧 PlaylistConverter Setup")
-    base = input("📂 Base folder path: ").strip()
-    if not os.path.isdir(base):
-        print(f"🚨 Folder not found: {base}")
-        sys.exit(1)
-
-    try: max_backups = int(input("🔢 Max backups (default 10): ").strip())
-    except: max_backups = 10
-
-    try: process_delay = float(input("⏳ Process delay (default 2): ").strip())
-    except: process_delay = 2
-
-    try: block_duration = float(input("🕒 Block duration (default 2): ").strip())
-    except: block_duration = 2
-
-    enable_autostart = input("🧩 Enable autostart? (y/n): ").strip().lower() == 'y'
-
-    return {
-        "base": base,
-        "max_backups": max_backups,
-        "process_delay": process_delay,
-        "block_duration": block_duration,
-        "enable_autostart": enable_autostart
-    }
-
-# === Load or Create Config ===
-config = load_config()
-if not config:
-    config = get_user_config()
-    save_config(config)
-
-if not os.path.isdir(config["base"]):
-    print(f"🚨 Invalid base folder in config: {config['base']}")
-    config = get_user_config()
-    save_config(config)
-
-# === Unpack Config ===
-base = config["base"]
-MAX_BACKUPS = config["max_backups"]
-PROCESS_DELAY = config["process_delay"]
-BLOCK_DURATION = config["block_duration"]
-ENABLE_AUTOSTART_PROMPT = config["enable_autostart"]
-
-# === Folder Paths ===
-folders = {
-    "library": os.path.join(base, "Library"),
-    "conversion": os.path.join(base, "Conversion"),
-    "android": os.path.join(base, "Android"),
-    "logs": os.path.join(base, "Logs"),
-    "backups": os.path.join(base, "Backups"),
-}
-log_path = os.path.join(folders["logs"], "log.txt")
-
-for path in folders.values():
-    os.makedirs(path, exist_ok=True)
-
-# === Logging ===
-def log(msg):
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"[{stamp}] {msg}\n")
-    print(msg)
 
 # === Autostart ===
 def setup_windows_autostart():
@@ -106,6 +27,7 @@ def setup_windows_autostart():
     bat_path = os.path.join(startup_dir, "PlaylistConverter_Autostart.bat")
     script_path = os.path.abspath(__file__)
     bat_content = f'@echo off\nstart "" "{script_path}"\n'
+
     try:
         with open(bat_path, "w") as bat_file:
             bat_file.write(bat_content)
@@ -128,6 +50,7 @@ def setup_linux_autostart():
     os.makedirs(autostart_dir, exist_ok=True)
     desktop_path = os.path.join(autostart_dir, "playlistconverter.desktop")
     script_path = os.path.abspath(__file__)
+
     desktop_entry = f"""[Desktop Entry]
 Type=Application
 Exec=python3 "{script_path}"
@@ -135,8 +58,9 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 Name=PlaylistConverter
-Comment=Playlist Sync Tool
+Comment=m3u Playlist Converter for Absolute Paths to Relative Paths
 """
+
     try:
         with open(desktop_path, "w") as f:
             f.write(desktop_entry)
@@ -153,25 +77,148 @@ def remove_linux_autostart():
     except Exception as e:
         log(f"🚨 Failed to remove Linux autostart: {e}")
 
-def apply_autostart_setting(enabled):
-    system = platform.system()
-    if enabled:
-        if system == "Windows":
-            setup_windows_autostart()
-        elif system == "Linux":
-            setup_linux_autostart()
-    else:
-        if system == "Windows":
-            remove_windows_autostart()
-        elif system == "Linux":
-            remove_linux_autostart()
+# === Autostart Prompt===
 
-apply_autostart_setting(ENABLE_AUTOSTART_PROMPT)
+def setup_autostart_prompt():
+    system = platform.system()
+    print(f"\n🧩 Autostart Setup ({system})")
+    choice = input("Would you like PlaylistConverter to run automatically on startup? (y/n): ").strip().lower()
+
+    if choice != 'y':
+        log("🛑 Autostart setup skipped by user")
+        return
+
+    if system == "Windows":
+        setup_windows_autostart()
+    elif system == "Linux":
+        setup_linux_autostart()
+    else:
+        log(f"⚠️ Autostart not supported on: {system}")
+
+# === Load Config from File ===
+def load_config():
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        log("✅ Configuration loaded from config.json")
+        return config
+    except Exception as e:
+        log(f"⚠️ No valid config found — entering setup: {e}")
+        return None
+
+# === Save Config to File ===
+def save_config(config):
+    try:
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=4)
+        log("💾 Configuration saved to config.json")
+    except Exception as e:
+        log(f"🚨 Failed to save config: {e}")
+
+# === Interactive Setup ===
+def get_user_config():
+    print("🎧 PlaylistConverter Setup")
+    print("Please enter the full path to your playlist base folder.")
+    print("Example: C:\\Users\\YourName\\Playlists\n")
+
+    base = input("📂 Base folder path: ").strip()
+    if not os.path.isdir(base):
+        print(f"🚨 Folder not found: {base}")
+        sys.exit(1)
+
+    print("\n💾 How many backups should be kept per playlist?")
+    print("Enter a number like 3, 5, or 10 (default is 10)")
+    try:
+        max_backups = int(input("🔢 Max backups: ").strip())
+    except ValueError:
+        max_backups = 10
+        print("⚠️ Invalid input — using default: 10")
+
+    print("\n⏱️ Process delay in seconds (default is 2)")
+    try:
+        process_delay = float(input("⏳ Process delay: ").strip())
+    except ValueError:
+        process_delay = 2
+        print("⚠️ Invalid input — using default: 2")
+
+    print("\n🚫 Block duration after push in seconds (default is 2)")
+    try:
+        block_duration = float(input("🕒 Block duration: ").strip())
+    except ValueError:
+        block_duration = 2
+        print("⚠️ Invalid input — using default: 2")
+
+    print("\n🧩 Enable autostart on system startup?")
+    enable_autostart = input("Run PlaylistConverter automatically when you log in? (y/n): ").strip().lower() == 'y'
+
+    return {
+        "base": base,
+        "max_backups": max_backups,
+        "process_delay": process_delay,
+        "block_duration": block_duration,
+        "enable_autostart": enable_autostart
+    }
+
+
+# === Load or Create Config ===
+config = load_config()
+if not config:
+    config = get_user_config()
+    save_config(config)
+
+
+# === Unpack Config ===
+if not os.path.isdir(config["base"]):
+    log(f"🚨 Invalid base folder in config: {config['base']}")
+    config = get_user_config()
+    save_config(config)
+
+base = config["base"]
+MAX_BACKUPS = config["max_backups"]
+PROCESS_DELAY = config["process_delay"]
+BLOCK_DURATION = config["block_duration"]
+ENABLE_AUTOSTART_PROMPT = config["enable_autostart"]
+
+# === Folder Paths ===
+folders = {
+    "library": os.path.join(base, "Library"),
+    "conversion": os.path.join(base, "Conversion"),
+    "android": os.path.join(base, "Android"),
+    "logs": os.path.join(base, "Logs"),
+    "backups": os.path.join(base, "Backups"),
+}
+log_path = os.path.join(folders["logs"], "log.txt")
+
+# Ensure folders exist
+for path in folders.values():
+    os.makedirs(path, exist_ok=True)
 
 # === Internal Caches ===
 recently_processed = {}
 recently_pushed_files = {}
 
+# === Logging ===
+def log(msg):
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"[{stamp}] {msg}\n")
+    print(msg)
+
+# === Autostart Setup ===
+system = platform.system()
+
+if ENABLE_AUTOSTART_PROMPT:
+    if system == "Windows":
+        setup_windows_autostart()
+    elif system == "Linux":
+        setup_linux_autostart()
+else:
+    if system == "Windows":
+        remove_windows_autostart()
+    elif system == "Linux":
+        remove_linux_autostart()
+
+# === Utilities ===
 def convert_m3u8_to_m3u(folder_path):
     for file in os.listdir(folder_path):
         if file.endswith(".m3u8"):
@@ -182,7 +229,6 @@ def convert_m3u8_to_m3u(folder_path):
                 log(f"📝 Renamed .m3u8 → .m3u: {file}")
             except Exception as e:
                 log(f"🚨 Failed to rename {file}: {e}")
-
 def strip_version(name):
     return re.sub(r'(_v\d+)+(?=\.m3u$)', '', name)
 
@@ -225,6 +271,7 @@ def create_backup(clean_name, content):
         b.write(content)
     log(f"💾 Backup created: {backup_name}")
 
+    # Remove old backups if limit exceeded
     backups = sorted([
         f for f in os.listdir(folders["backups"])
         if f.startswith(clean_name + "_") and f.endswith(".m3u")
@@ -235,6 +282,7 @@ def create_backup(clean_name, content):
             os.remove(os.path.join(folders["backups"], old_file))
             log(f"🗑️ Old backup deleted: {old_file}")
 
+# === Core Processing ===
 def process_to_conversion(src_path, origin):
     try:
         raw_name = os.path.basename(src_path)
@@ -280,6 +328,7 @@ def process_to_conversion(src_path, origin):
     except Exception as e:
         log(f"🚨 Error in process_to_conversion:\n{traceback.format_exc()}")
 
+# === Push Conversion to Target Folder ===
 def push_from_conversion(conv_path):
     try:
         with open(conv_path, "r", encoding="utf-8") as f:
@@ -304,8 +353,9 @@ def push_from_conversion(conv_path):
     except Exception as e:
         log(f"🚨 Error in push_from_conversion:\n{traceback.format_exc()}")
 
+# === Initial Sync with Hash Comparison ===
+convert_m3u8_to_m3u(folders["android"])
 def initial_sync_with_comparison():
-    convert_m3u8_to_m3u(folders["android"])
     for folder_key, label in [("android", "Android"), ("library", "Library")]:
         for file in os.listdir(folders[folder_key]):
             if file.endswith(".m3u") and not re.search(r"_v\d+\.m3u$", file):
@@ -350,8 +400,12 @@ class WatchHandler(FileSystemEventHandler):
     def on_created(self, event): self.handle_event(event)
     def on_modified(self, event): self.handle_event(event)
 
+
 # === Tray Icon Setup ===
-def on_run(): log("▶️ Manual sync triggered"); initial_sync_with_comparison()
+
+def on_run():
+    log("▶️ Manual sync triggered from tray")
+    initial_sync_with_comparison()
 
 def on_quit(icon):
     observer.stop()
@@ -362,55 +416,113 @@ def on_quit(icon):
 def open_base_folder(icon=None, item=None):
     try:
         system = platform.system()
-        if system == "Windows": os.startfile(base)
-        elif system == "Linux": subprocess.Popen(["xdg-open", base])
-        elif system == "Darwin": subprocess.Popen(["open", base])
+        if system == "Windows":
+            os.startfile(base)
+        elif system == "Linux":
+            subprocess.Popen(["xdg-open", base])
+        elif system == "Darwin":
+            subprocess.Popen(["open", base])
         log(f"📂 Opened base folder: {base}")
     except Exception as e:
         log(f"🚨 Failed to open base folder: {e}")
 
 def toggle_autostart(icon):
     config = load_config()
-    if not config: return
-    new_state = not config.get("enable_autostart", False)
+    if not config:
+        log("⚠️ Cannot toggle autostart — config not found")
+        return
+
+    current = config.get("enable_autostart", False)
+    new_state = not current
     config["enable_autostart"] = new_state
     save_config(config)
-    apply_autostart_setting(new_state)
-    log(f"{'✅ Enabled' if new_state else '🛑 Disabled'} autostart")
+
+    system = platform.system()
+    if new_state:
+        if system == "Windows":
+            setup_windows_autostart()
+        elif system == "Linux":
+            setup_linux_autostart()
+        log("✅ Autostart enabled")
+    else:
+        if system == "Windows":
+            remove_windows_autostart()
+        elif system == "Linux":
+            remove_linux_autostart()
+        log("🛑 Autostart disabled")
+
     icon.update_menu()
 
 def reset_setup(icon=None, item=None):
-    confirm = input("⚠️ Reset configuration? This will overwrite current settings. (y/n): ").strip().lower()
-    if confirm != 'y':
-        log("🛑 Reset cancelled.")
-        return
-    new_config = get_user_config()
-    save_config(new_config)
-    global base, MAX_BACKUPS, PROCESS_DELAY, BLOCK_DURATION, ENABLE_AUTOSTART_PROMPT
-    base = new_config["base"]
-    MAX_BACKUPS = new_config["max_backups"]
-    PROCESS_DELAY = new_config["process_delay"]
-    BLOCK_DURATION = new_config["block_duration"]
-    ENABLE_AUTOSTART_PROMPT = new_config["enable_autostart"]
-    apply_autostart_setting(ENABLE_AUTOSTART_PROMPT)
-    log("🔄 Configuration reset and applied.")
+    try:
+        confirm = input("⚠️ Are you sure you want to reset configuration? This will overwrite your current settings. (y/n): ").strip().lower()
+        if confirm != 'y':
+            log("🛑 Reset setup cancelled by user.")
+            return
+
+        new_config = get_user_config()
+        save_config(new_config)
+
+        # Apply new config immediately
+        global base, MAX_BACKUPS, PROCESS_DELAY, BLOCK_DURATION, ENABLE_AUTOSTART_PROMPT
+        base = new_config["base"]
+        MAX_BACKUPS = new_config["max_backups"]
+        PROCESS_DELAY = new_config["process_delay"]
+        BLOCK_DURATION = new_config["block_duration"]
+        ENABLE_AUTOSTART_PROMPT = new_config["enable_autostart"]
+
+        # Apply autostart setting
+        system = platform.system()
+        if ENABLE_AUTOSTART_PROMPT:
+            if system == "Windows":
+                setup_windows_autostart()
+            elif system == "Linux":
+                setup_linux_autostart()
+        else:
+            if system == "Windows":
+                remove_windows_autostart()
+            elif system == "Linux":
+                remove_linux_autostart()
+
+        log("🔄 Configuration reset and applied.")
+
+    except Exception as e:
+        log(f"🚨 Failed to reset configuration: {e}")
 
 def create_tray():
+    system = platform.system()
+
+    if system == "Darwin":
+        log("🍎 Tray icon not supported on macOS — skipping tray setup")
+        return
+
+    if system == "Linux":
+        log("🐧 Attempting tray setup on Linux — may vary by desktop")
+
     try:
         icon_path = os.path.join(os.path.dirname(__file__), "playlist_icon.ico")
-        image = Image.open(icon_path) if os.path.exists(icon_path) else Image.new('RGB', (64, 64), color='black')
+
+        if not os.path.exists(icon_path):
+            log("⚠️ Icon file not found — using fallback")
+            image = Image.new('RGB', (64, 64), color='black')
+        else:
+            image = Image.open(icon_path)
+
         menu = Menu(
-            Item('Run Sync', on_run),
-            Item('Open Folder', open_base_folder),
-            Item('Toggle Autostart', toggle_autostart),
-            Item('Reset Setup', reset_setup),
-            Item('Quit', on_quit)
-        )
+    Item('Run Sync', on_run),
+    Item('Open Folder', open_base_folder),
+    Item('Toggle Autostart', toggle_autostart),
+    Item('Reset Setup', reset_setup),
+    Item('Quit', on_quit)
+)
+
         icon = Icon("PlaylistConverter", image, "Playlist Sync", menu)
         threading.Thread(target=icon.run, daemon=True).start()
-        log("🎧 Tray created successfully")
+        log(f"🎧 Tray created successfully on {system}")
+
     except Exception as e:
-        log(f"🚨 Tray setup failed: {e}")
+        log(f"🚨 Tray setup failed on {system}: {e}")
+
 
 # === Startup ===
 initial_sync_with_comparison()
@@ -431,3 +543,4 @@ except KeyboardInterrupt:
     observer.stop()
     log("🛑 Stopped by user.")
 observer.join()
+#input("📥 Press Enter to exit...")
