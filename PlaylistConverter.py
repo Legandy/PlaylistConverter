@@ -7,30 +7,47 @@ from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# ⚙️ Konfiguration
-MAX_VERSIONS = 5
+# === Configuration ===
+MAX_BACKUPS = 10
 PROCESS_DELAY = 2
 BLOCK_DURATION = 3
+
 recently_processed = {}
 recently_pushed_files = {}
 
-# 📁 Ordnerstruktur
+# === Folder Paths ===
 base = r"C:\#RSync\Audio\Playlists\PlaylistsAndre\MusicBee"
 folders = {
     "library": os.path.join(base, "Library"),
     "conversion": os.path.join(base, "Conversion"),
     "android": os.path.join(base, "Android"),
     "logs": os.path.join(base, "Logs"),
+    "backups": os.path.join(base, "Backups"),
 }
 log_path = os.path.join(folders["logs"], "log.txt")
 
+# Ensure folders exist
+for path in folders.values():
+    os.makedirs(path, exist_ok=True)
+
+# === Logging ===
 def log(msg):
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    os.makedirs(folders["logs"], exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(f"[{stamp}] {msg}\n")
     print(msg)
 
+# === Utilities ===
+def convert_m3u8_to_m3u(folder_path):
+    for file in os.listdir(folder_path):
+        if file.endswith(".m3u8"):
+            original = os.path.join(folder_path, file)
+            renamed = os.path.join(folder_path, file[:-5] + ".m3u")
+            try:
+                os.rename(original, renamed)
+                log(f"📝 Renamed .m3u8 → .m3u: {file}")
+            except Exception as e:
+                log(f"🚨 Failed to rename {file}: {e}")
 def strip_version(name):
     return re.sub(r'(_v\d+)+(?=\.m3u$)', '', name)
 
@@ -56,21 +73,6 @@ def clean_for_hash(lines):
         )
     )
 
-def get_versioned_name(base_name):
-    name, ext = os.path.splitext(base_name)
-    versions = []
-    for f in os.listdir(folders["conversion"]):
-        if re.match(rf"{re.escape(name)}_v\d+{re.escape(ext)}", f):
-            num = int(re.findall(r"_v(\d+)", f)[0])
-            versions.append((num, f))
-    next_num = max([v[0] for v in versions], default=0) + 1
-    versions.sort()
-    if len(versions) >= MAX_VERSIONS:
-        for _, old_file in versions[:len(versions) - MAX_VERSIONS + 1]:
-            os.remove(os.path.join(folders["conversion"], old_file))
-            log(f"🗑️ Alte Version gelöscht: {old_file}")
-    return f"{name}_v{next_num}{ext}"
-
 def should_process(path):
     name = os.path.basename(path)
     now = time.time()
@@ -79,12 +81,29 @@ def should_process(path):
     recently_processed[name] = now
     return True
 
+def create_backup(clean_name, content):
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_name = f"{clean_name}_{timestamp}.m3u"
+    backup_path = os.path.join(folders["backups"], backup_name)
+
+    with open(backup_path, "w", encoding="utf-8") as b:
+        b.write(content)
+    log(f"💾 Backup created: {backup_name}")
+
+    # Remove old backups if limit exceeded
+    backups = sorted([
+        f for f in os.listdir(folders["backups"])
+        if f.startswith(clean_name + "_") and f.endswith(".m3u")
+    ], key=lambda x: os.path.getmtime(os.path.join(folders["backups"], x)))
+
+    if len(backups) > MAX_BACKUPS:
+        for old_file in backups[:len(backups) - MAX_BACKUPS]:
+            os.remove(os.path.join(folders["backups"], old_file))
+            log(f"🗑️ Old backup deleted: {old_file}")
+
+# === Core Processing ===
 def process_to_conversion(src_path, origin):
     try:
-        if os.path.commonpath([src_path, folders["conversion"]]) == folders["conversion"]:
-            log(f"⏭️ Datei liegt bereits in Conversion: {src_path}")
-            return
-
         raw_name = os.path.basename(src_path)
         clean_name = strip_version(raw_name)
         rel_folder = folders["library"] if origin == "Library" else folders["android"]
@@ -102,35 +121,33 @@ def process_to_conversion(src_path, origin):
             f"# Target Folder: {'Android' if origin == 'Library' else 'Library'}\n"
         ]
         converted += [make_relative(line, rel_folder) + "\n" for line in filtered_lines]
-        cleaned_current = clean_for_hash(converted)
+        content = "".join(converted)
+
+        cleaned_current = clean_for_hash([line.rstrip("\n") for line in converted])
         new_hash = checksum(cleaned_current)
 
-        existing = sorted([
-            f for f in os.listdir(folders["conversion"])
-            if f.startswith(clean_name + "_v") and f.endswith(".m3u")
-        ], key=lambda x: int(re.search(r"_v(\d+)", x).group(1)), reverse=True)
+        conv_path = os.path.join(folders["conversion"], clean_name)
 
-        if existing:
-            last_path = os.path.join(folders["conversion"], existing[0])
-            with open(last_path, "r", encoding="utf-8") as f_last:
-                last_lines = f_last.readlines()
-            cleaned_last = clean_for_hash(last_lines)
-            last_hash = checksum(cleaned_last)
-            if new_hash == last_hash:
-                log(f"🛑 Keine Änderung – Hash identisch zu letzter Version: {clean_name}")
+        if os.path.exists(conv_path):
+            with open(conv_path, "r", encoding="utf-8") as f_conv:
+                conv_lines = f_conv.readlines()
+            cleaned_conv = clean_for_hash([line.rstrip("\n") for line in conv_lines])
+            if new_hash == checksum(cleaned_conv):
+                log(f"✅ No change detected — skipping: {clean_name}")
                 return
 
-        versioned_name = get_versioned_name(clean_name)
-        conv_path = os.path.join(folders["conversion"], versioned_name)
         with open(conv_path, "w", encoding="utf-8") as f_out:
-            f_out.write("".join(converted))
+            f_out.write(content)
 
-        log(f"🔁 {origin} → Conversion: {versioned_name}")
-        log(f"🔐 Prüfsumme: {new_hash}")
+        log(f"🔁 {origin} → Conversion updated: {clean_name}")
+        log(f"🔐 Hash: {new_hash}")
+        create_backup(clean_name, content)
         push_from_conversion(conv_path)
-    except Exception as e:
-        log(f"🚨 Fehler bei process_to_conversion: {traceback.format_exc()}")
 
+    except Exception as e:
+        log(f"🚨 Error in process_to_conversion:\n{traceback.format_exc()}")
+
+# === Push Conversion to Target Folder ===
 def push_from_conversion(conv_path):
     try:
         with open(conv_path, "r", encoding="utf-8") as f:
@@ -153,19 +170,37 @@ def push_from_conversion(conv_path):
                 log(f"📤 Conversion → {folder_key.capitalize()}: {clean_name}")
                 return
     except Exception as e:
-        log(f"🚨 Fehler bei push_from_conversion: {traceback.format_exc()}")    
+        log(f"🚨 Error in push_from_conversion:\n{traceback.format_exc()}")
 
-def initial_sync(folder_key, label):
-    for file in os.listdir(folders[folder_key]):
-        if file.endswith(".m3u") and not re.search(r"_v\d+\.m3u$", file):
-            block_until = recently_pushed_files.get(folder_key, {}).get(file, 0)
-            if time.time() < block_until:
-                log(f"⏸️ Initialsync gesperrt für {file} in {label}")
-                continue
-            full_path = os.path.join(folders[folder_key], file)
-            log(f"🆕 Initialsync aus {label}: {file}")
-            process_to_conversion(full_path, label)
+# === Initial Sync with Hash Comparison ===
+convert_m3u8_to_m3u(folders["android"])
+def initial_sync_with_comparison():
+    for folder_key, label in [("android", "Android"), ("library", "Library")]:
+        for file in os.listdir(folders[folder_key]):
+            if file.endswith(".m3u") and not re.search(r"_v\d+\.m3u$", file):
+                full_path = os.path.join(folders[folder_key], file)
+                try:
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    cleaned_current = clean_for_hash([line.rstrip("\n") for line in lines])
+                    current_hash = checksum(cleaned_current)
 
+                    conv_path = os.path.join(folders["conversion"], strip_version(file))
+                    if os.path.exists(conv_path):
+                        with open(conv_path, "r", encoding="utf-8") as f_conv:
+                            conv_lines = f_conv.readlines()
+                        cleaned_conv = clean_for_hash([line.rstrip("\n") for line in conv_lines])
+                        if current_hash == checksum(cleaned_conv):
+                            log(f"✅ No change in {label}: {file}")
+                            continue
+
+                    log(f"🆕 Initial sync from {label}: {file}")
+                    process_to_conversion(full_path, label)
+
+                except Exception as e:
+                    log(f"🚨 Initial sync error [{file}]:\n{traceback.format_exc()}")
+
+# === Watchdog Setup ===
 class WatchHandler(FileSystemEventHandler):
     def __init__(self, label): self.label = label
 
@@ -175,31 +210,30 @@ class WatchHandler(FileSystemEventHandler):
             folder_key = self.label.lower()
             skip_until = recently_pushed_files.get(folder_key, {}).get(file_name, 0)
             if time.time() < skip_until:
-                log(f"⏸️ Watchdog gesperrt für {file_name} in {self.label}")
+                log(f"⏸️ Watchdog blocked for {file_name} in {self.label}")
                 return
             if should_process(event.src_path):
-                log(f"🆕 Event in {self.label}: {file_name}")
+                log(f"✏️ Watchdog triggered in {self.label}: {file_name}")
                 process_to_conversion(event.src_path, self.label)
 
     def on_created(self, event): self.handle_event(event)
     def on_modified(self, event): self.handle_event(event)
 
-# 🚀 Start
-initial_sync("library", "Library")
-initial_sync("android", "Android")
+# === Startup ===
+initial_sync_with_comparison()
 time.sleep(2)
 
 observer = Observer()
 observer.schedule(WatchHandler("Library"), folders["library"], recursive=True)
 observer.schedule(WatchHandler("Android"), folders["android"], recursive=True)
 observer.start()
-log("🎧 Watchdog aktiv – warte auf Events.")
+log("🎧 Watchdog is active. Monitoring changes...")
 
 try:
     while True:
         time.sleep(1)
 except KeyboardInterrupt:
     observer.stop()
-    log("🛑 Beendet durch Nutzer.")
+    log("🛑 Stopped by user.")
 observer.join()
-input("📥 Enter zum Schließen...")
+input("📥 Press Enter to exit...")
