@@ -22,20 +22,17 @@ from watchdog.events import FileSystemEventHandler
 from pystray import Icon, MenuItem as Item, Menu
 from PIL import Image
 
+import os
+import json
+
 # === Config File Path ===
 config_path = os.path.join(os.path.dirname(__file__), "config.json")
 
-# === Load Config ===
-def load_config():
-    try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
-        print("✅ Configuration loaded from config.json")
-        return config
-    except Exception as e:
-        print(f"⚠️ No valid config found — entering setup: {e}")
-        return None
+# === Logging Helper ===
+def log(msg):
+    print(msg)  # You can expand this to write to a log file if needed
 
+# === Save Config ===
 def save_config(config):
     try:
         with open(config_path, "w") as f:
@@ -44,42 +41,48 @@ def save_config(config):
     except Exception as e:
         log(f"🚨 Failed to save config: {e}")
 
+# === Setup Prompt ===
 def get_user_config():
     print("🎧 PlaylistConverter Setup")
-    base = input("📂 Base folder path: ").strip()
-    if not os.path.isdir(base):
-        print(f"🚨 Folder not found: {base}")
-        sys.exit(1)
+    base = input("📂 Enter base folder path (e.g. C:/Users/Andre/Playlists): ").strip()
+    android_folder = input("📱 Enter name for Android playlist folder (e.g. PowerampPlaylists): ").strip()
+    library_folder = input("💻 Enter name for Library playlist folder (e.g. MusicBeePlaylists): ").strip()
+    max_backups = int(input("🔢 Max backups per playlist: ").strip())
+    process_delay = float(input("⏳ Process delay (seconds): ").strip())
+    block_duration = float(input("🕒 Block duration after push (seconds): ").strip())
+    enable_autostart = input("⚙️ Enable autostart? (y/n): ").strip().lower() == 'y'
 
-    try: max_backups = int(input("🔢 Max backups (default 10): ").strip())
-    except: max_backups = 10
-
-    try: process_delay = float(input("⏳ Process delay (default 2): ").strip())
-    except: process_delay = 2
-
-    try: block_duration = float(input("🕒 Block duration (default 2): ").strip())
-    except: block_duration = 2
-
-    enable_autostart = input("🧩 Enable autostart? (y/n): ").strip().lower() == 'y'
-
-    return {
+    config = {
         "base": base,
+        "android_folder": android_folder,
+        "library_folder": library_folder,
         "max_backups": max_backups,
         "process_delay": process_delay,
         "block_duration": block_duration,
         "enable_autostart": enable_autostart
     }
 
-# === Load or Create Config ===
-config = load_config()
-if not config:
-    config = get_user_config()
     save_config(config)
+    return config
 
+# === Load or Create Config ===
+def load_config():
+    if not os.path.exists(config_path):
+        return get_user_config()
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        log("✅ Configuration loaded from config.json")
+        return config
+    except Exception as e:
+        log(f"⚠️ Failed to load config — entering setup: {e}")
+        return get_user_config()
+
+# === Load Config and Validate Base Folder ===
+config = load_config()
 if not os.path.isdir(config["base"]):
-    print(f"🚨 Invalid base folder in config: {config['base']}")
+    log(f"🚨 Invalid base folder in config: {config['base']}")
     config = get_user_config()
-    save_config(config)
 
 # === Unpack Config ===
 base = config["base"]
@@ -89,17 +92,19 @@ BLOCK_DURATION = config["block_duration"]
 ENABLE_AUTOSTART_PROMPT = config["enable_autostart"]
 
 # === Folder Paths ===
+script_dir = os.path.dirname(os.path.abspath(__file__))
 folders = {
-    "library": os.path.join(base, "Library"),
-    "conversion": os.path.join(base, "Conversion"),
-    "android": os.path.join(base, "Android"),
-    "logs": os.path.join(base, "Logs"),
-    "backups": os.path.join(base, "Backups"),
+    "android": os.path.join(base, config["android_folder"]),
+    "library": os.path.join(base, config["library_folder"]),
+    "conversion": os.path.join(script_dir, "PlaylistConverter", "Conversion"),
+    "backups": os.path.join(script_dir, "PlaylistConverter", "Backups"),
+    "logs": os.path.join(script_dir, "PlaylistConverter", "Logs")
 }
-log_path = os.path.join(folders["logs"], "log.txt")
 
-for path in folders.values():
+# === Create Folders ===
+for name, path in folders.items():
     os.makedirs(path, exist_ok=True)
+    log(f"📁 Ensured folder exists: {name} → {path}")
 
 # === Logging ===
 def log(msg):
