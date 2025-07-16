@@ -1,6 +1,5 @@
 🎧 PlaylistConverter
-Smart playlist sync tool for MusicBee and Poweramp.
-Automatically detects changes in .m3u and .m3u8 files, converts paths, maintains backups, and keeps your Android and Library folders in sync — all in real time.
+Automatically detects changes .m3u8 files to .m3u (to work with MusicBee), converts absolute paths to relative paths, maintains backups, and keeps your Android and Library folders in sync — all in real time.
 
 🚀 Features
 - 🧠 Hash-based change detection — only processes playlists when content changes
@@ -87,3 +86,16 @@ start "" "C:\Path\To\PlaylistConverter.pyw"
 Tray icon used with permission from:
 <a href="https://www.flaticon.com/free-icons/playlist" title="playlist icons">Playlist icons created by Freepik - Flaticon</a>
 
+📄 License
+This project is licensed under the GNU General Public License v3.0 (GPLv3).
+You are free to use, modify, and distribute this software, as long as any derivative works are also licensed under GPLv3.
+Copyright (c) 2024 Legandy
+See the LICENSE file for full details.
+
+
+🤝 Contributions
+Feel free to fork, improve, and share — just keep it open-source.
+For commercial use or licensing inquiries, contact Legandy.
+
+💬 Questions or Feedback?
+Open an issue or start a discussion — I’d love to hear how you’re using PlaylistConverter!
