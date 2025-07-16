@@ -6,6 +6,9 @@ import re
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from pystray import Icon, MenuItem as Item, Menu
+from PIL import Image
+import threading
 
 # === Configuration ===
 MAX_BACKUPS = 10
@@ -219,6 +222,44 @@ class WatchHandler(FileSystemEventHandler):
     def on_created(self, event): self.handle_event(event)
     def on_modified(self, event): self.handle_event(event)
 
+
+# === Tray Icon Setup ===
+def on_run():
+    log("▶️ Manual sync triggered from tray")
+    initial_sync_with_comparison()
+
+def on_quit(icon):
+    observer.stop()
+    observer.join()
+    log("🛑 Tray app quit by user.")
+    icon.stop()
+
+def create_tray():
+    try:
+        icon_path = os.path.join(os.path.dirname(__file__), "playlist_icon.ico")
+
+        # Use fallback icon if .ico file is missing
+        if not os.path.exists(icon_path):
+            log("⚠️ Icon file not found, using fallback")
+            image = Image.new('RGB', (64, 64), color='black')
+        else:
+            image = Image.open(icon_path)
+
+        menu = Menu(
+            Item('Run Sync', on_run),
+            Item('Quit', on_quit)
+        )
+
+        icon = Icon("PlaylistConverter", image, "PlaylistConverter", menu)
+
+        # Run tray icon in background thread
+        threading.Thread(target=icon.run, daemon=True).start()
+        log("🎧 Tray created successfully")
+
+    except Exception as e:
+        log(f"🚨 Tray creation failed: {e}")
+
+
 # === Startup ===
 initial_sync_with_comparison()
 time.sleep(2)
@@ -229,6 +270,8 @@ observer.schedule(WatchHandler("Android"), folders["android"], recursive=True)
 observer.start()
 log("🎧 Watchdog is active. Monitoring changes...")
 
+create_tray()  # 🖼️ Launch tray icon with menu
+
 try:
     while True:
         time.sleep(1)
@@ -236,4 +279,4 @@ except KeyboardInterrupt:
     observer.stop()
     log("🛑 Stopped by user.")
 observer.join()
-input("📥 Press Enter to exit...")
+#input("📥 Press Enter to exit...")
