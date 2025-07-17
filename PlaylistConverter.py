@@ -22,15 +22,23 @@ from watchdog.events import FileSystemEventHandler
 from pystray import Icon, MenuItem as Item, Menu
 from PIL import Image
 
-import os
-import json
+# === Script Directory ===
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # === Config File Path ===
-config_path = os.path.join(os.path.dirname(__file__), "config.json")
+config_path = os.path.join(script_dir, "config.json")
 
-# === Logging Helper ===
+# === Logging Path ===
+log_dir = os.path.join(script_dir, "Logs")
+os.makedirs(log_dir, exist_ok=True)
+log_path = os.path.join(log_dir, "log.txt")
+
+# === Logging Function ===
 def log(msg):
-    print(msg)  # You can expand this to write to a log file if needed
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"[{stamp}] {msg}\n")
+    print(msg)
 
 # === Save Config ===
 def save_config(config):
@@ -92,26 +100,18 @@ BLOCK_DURATION = config["block_duration"]
 ENABLE_AUTOSTART_PROMPT = config["enable_autostart"]
 
 # === Folder Paths ===
-script_dir = os.path.dirname(os.path.abspath(__file__))
 folders = {
     "android": os.path.join(base, config["android_folder"]),
     "library": os.path.join(base, config["library_folder"]),
-    "conversion": os.path.join(script_dir, "PlaylistConverter", "Conversion"),
-    "backups": os.path.join(script_dir, "PlaylistConverter", "Backups"),
-    "logs": os.path.join(script_dir, "PlaylistConverter", "Logs")
+    "conversion": os.path.join(script_dir, "Conversion"),
+    "backups": os.path.join(script_dir, "Backups"),
+    "logs": log_dir
 }
 
 # === Create Folders ===
 for name, path in folders.items():
     os.makedirs(path, exist_ok=True)
     log(f"📁 Ensured folder exists: {name} → {path}")
-
-# === Logging ===
-def log(msg):
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"[{stamp}] {msg}\n")
-    print(msg)
 
 # === Autostart ===
 def setup_windows_autostart():

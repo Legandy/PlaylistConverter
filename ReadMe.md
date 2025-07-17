@@ -48,17 +48,20 @@ This script automatically converts absolute paths to relative ones so your playl
 - Ensures compatibility with apps that expect relative paths  
 
 > 💡 You don’t need to use MusicBee or Poweramp — they’re just examples.  
-> For syncing the (new) playlists with relative paths I use ResilioSync but SyncThing should work too
+
 
 Different Music players i tried:
 Windows:
-> MediaMonkey -> stores internal playlists in a Database -> can't be overridden via new file
-> AIMP -> stores playlist as a file but as a .aimppl4 -> conversion possible but not implemented
-> MusicBee -> stores playlist in a m3u file -> easily overridden -> Winner
+- MediaMonkey -> stores internal playlists in a Database -> can't be overridden via new file
+- AIMP -> stores playlist as a file but as a .aimppl4 -> conversion possible but not implemented
+- MusicBee -> stores playlist in a m3u file -> easily overridden -> Winner
 
 Android:
-> Poweramp -> imports playlist automatically and writes new entries into the m3u files
+- Poweramp -> imports playlist automatically and writes new entries into the m3u files
 ---
+
+Syncing across devices:
+- For syncing the playlists with relative paths I use ResilioSync but SyncThing should work too
 
 📁 Folder Structure (Fully Customizable)
 Playlists/                  # Example base folder (user-defined)
@@ -95,7 +98,7 @@ All paths are saved in config.json and can be changed anytime via the tray menu�
 1. Dependencies:
     - Python
 
-    Install python dependencies:
+And Install python dependencies:
 
     pip install watchdog pillow pystray
 
