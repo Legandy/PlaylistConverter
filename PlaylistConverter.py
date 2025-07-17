@@ -1,26 +1,17 @@
-# PlaylistConverter
-# Copyright (c) 2024 Legandy
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, version 3.
-# See https://www.gnu.org/licenses/gpl-3.0.html
-
-
 import os
-import time
-import traceback
-import hashlib
-import re
-import threading
-import sys
-import platform
 import json
+import platform
 import subprocess
-from datetime import datetime
+import re
+import hashlib
+import time
+import threading
+import traceback
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pystray import Icon, MenuItem as Item, Menu
 from PIL import Image
+from datetime import datetime
 
 # === Script Directory ===
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -31,16 +22,43 @@ config_path = os.path.join(script_dir, "config.json")
 # === Logging Path ===
 log_dir = os.path.join(script_dir, "Logs")
 os.makedirs(log_dir, exist_ok=True)
-log_path = os.path.join(log_dir, "log.txt")
+log_filename = f"log_{datetime.now().strftime('%Y-%m-%d')}.txt"
+log_path = os.path.join(log_dir, log_filename)
+
 
 # === Logging Function ===
+def rotate_logs():
+    try:
+        logs = sorted([
+            f for f in os.listdir(log_dir)
+            if f.startswith("log_") and f.endswith(".txt")
+        ], key=lambda x: os.path.getmtime(os.path.join(log_dir, x)))
+
+        if len(logs) > MAX_LOGS:
+            for old_log in logs[:len(logs) - MAX_LOGS]:
+                os.remove(os.path.join(log_dir, old_log))
+                print(f"🗑️ Old log deleted: {old_log}")
+    except Exception as e:
+        print(f"🚨 Log rotation error: {e}")
+
 def log(msg):
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"[{stamp}] {msg}\n")
-    print(msg)
+    log_filename = f"log_{datetime.now().strftime('%Y-%m-%d')}.txt"
+    log_path = os.path.join(log_dir, log_filename)
 
-# === Save Config ===
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{stamp}] {msg}\n")
+    except Exception as e:
+        print(f"🚨 Failed to write to log: {e}")
+    print(msg)
+    rotate_logs()
+
+
+VERSION = "1.0.0"
+log(f"🎧 PlaylistConverter v{VERSION} started")
+
+# === Save Configuration Function ===
 def save_config(config):
     try:
         with open(config_path, "w") as f:
@@ -49,31 +67,31 @@ def save_config(config):
     except Exception as e:
         log(f"🚨 Failed to save config: {e}")
 
-# === Setup Prompt ===
+# === Configuration Prompt and Save ===
 def get_user_config():
     print("🎧 PlaylistConverter Setup")
-    base = input("📂 Enter base folder path (e.g. C:/Users/Andre/Playlists): ").strip()
-    android_folder = input("📱 Enter name for Android playlist folder (e.g. PowerampPlaylists): ").strip()
-    library_folder = input("💻 Enter name for Library playlist folder (e.g. MusicBeePlaylists): ").strip()
+    sp_path = input("📱 Enter full path to smartphone playlist folder (e.g. D:/SP_Playlists): ").strip()
+    pc_path = input("💻 Enter full path to PC playlist folder (e.g. C:/PC_Playlists): ").strip()
     max_backups = int(input("🔢 Max backups per playlist: ").strip())
     process_delay = float(input("⏳ Process delay (seconds): ").strip())
     block_duration = float(input("🕒 Block duration after push (seconds): ").strip())
     enable_autostart = input("⚙️ Enable autostart? (y/n): ").strip().lower() == 'y'
+    max_logs = int(input("🧹 Max number of log files to keep: ").strip())
 
     config = {
-        "base": base,
-        "android_folder": android_folder,
-        "library_folder": library_folder,
+        "sp_path": sp_path,
+        "pc_path": pc_path,
         "max_backups": max_backups,
         "process_delay": process_delay,
         "block_duration": block_duration,
-        "enable_autostart": enable_autostart
+        "enable_autostart": enable_autostart,
+        "max_logs": max_logs
     }
 
     save_config(config)
     return config
 
-# === Load or Create Config ===
+# === Load and Validate Configuration ===
 def load_config():
     if not os.path.exists(config_path):
         return get_user_config()
@@ -86,34 +104,35 @@ def load_config():
         log(f"⚠️ Failed to load config — entering setup: {e}")
         return get_user_config()
 
-# === Load Config and Validate Base Folder ===
 config = load_config()
-if not os.path.isdir(config["base"]):
-    log(f"🚨 Invalid base folder in config: {config['base']}")
-    config = get_user_config()
+for key in ["sp_path", "pc_path"]:
+    if not os.path.isdir(config[key]):
+        log(f"🚨 Invalid folder path in config: {config[key]}")
+        config = get_user_config()
+        break
 
-# === Unpack Config ===
-base = config["base"]
+# === Unpack Config and Create Folders ===
+SP_PATH = config["sp_path"]
+PC_PATH = config["pc_path"]
 MAX_BACKUPS = config["max_backups"]
 PROCESS_DELAY = config["process_delay"]
 BLOCK_DURATION = config["block_duration"]
 ENABLE_AUTOSTART_PROMPT = config["enable_autostart"]
+MAX_LOGS = config["max_logs"]
 
-# === Folder Paths ===
 folders = {
-    "android": os.path.join(base, config["android_folder"]),
-    "library": os.path.join(base, config["library_folder"]),
+    "smartphone": SP_PATH,
+    "pc": PC_PATH,
     "conversion": os.path.join(script_dir, "Conversion"),
     "backups": os.path.join(script_dir, "Backups"),
     "logs": log_dir
 }
 
-# === Create Folders ===
 for name, path in folders.items():
     os.makedirs(path, exist_ok=True)
     log(f"📁 Ensured folder exists: {name} → {path}")
 
-# === Autostart ===
+# === Autostart Functions ===
 def setup_windows_autostart():
     startup_dir = os.path.join(os.getenv("APPDATA"), r"Microsoft\Windows\Start Menu\Programs\Startup")
     bat_path = os.path.join(startup_dir, "PlaylistConverter_Autostart.bat")
@@ -181,10 +200,21 @@ def apply_autostart_setting(enabled):
 
 apply_autostart_setting(ENABLE_AUTOSTART_PROMPT)
 
-# === Internal Caches ===
-recently_processed = {}
-recently_pushed_files = {}
+# === Tray menu Open App Folder Function ===
+def open_app_folder(icon=None, item=None):
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(script_dir)
+        elif system == "Linux":
+            subprocess.Popen(["xdg-open", script_dir])
+        elif system == "Darwin":
+            subprocess.Popen(["open", script_dir])
+        log(f"📂 Opened app folder: {script_dir}")
+    except Exception as e:
+        log(f"🚨 Failed to open app folder: {e}")
 
+# === Sync Logic and Convert M3U8 to M3U ===
 def convert_m3u8_to_m3u(folder_path):
     for file in os.listdir(folder_path):
         if file.endswith(".m3u8"):
@@ -196,6 +226,9 @@ def convert_m3u8_to_m3u(folder_path):
             except Exception as e:
                 log(f"🚨 Failed to rename {file}: {e}")
 
+
+
+# === Helper Functions ===
 def strip_version(name):
     return re.sub(r'(_v\d+)+(?=\.m3u$)', '', name)
 
@@ -229,6 +262,7 @@ def should_process(path):
     recently_processed[name] = now
     return True
 
+# === Create Backup Function ===
 def create_backup(clean_name, content):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     backup_name = f"{clean_name}_{timestamp}.m3u"
@@ -248,11 +282,12 @@ def create_backup(clean_name, content):
             os.remove(os.path.join(folders["backups"], old_file))
             log(f"🗑️ Old backup deleted: {old_file}")
 
+# === Process Playlist Conversion ===
 def process_to_conversion(src_path, origin):
     try:
         raw_name = os.path.basename(src_path)
         clean_name = strip_version(raw_name)
-        rel_folder = folders["library"] if origin == "Library" else folders["android"]
+        rel_folder = folders["pc"] if origin == "PC" else folders["smartphone"]
 
         with open(src_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -264,7 +299,7 @@ def process_to_conversion(src_path, origin):
         converted = [
             f"# Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
             f"# Source Folder: {origin}\n",
-            f"# Target Folder: {'Android' if origin == 'Library' else 'Library'}\n"
+            f"# Target Folder: {'Smartphone' if origin == 'PC' else 'PC'}\n"
         ]
         converted += [make_relative(line, rel_folder) + "\n" for line in filtered_lines]
         content = "".join(converted)
@@ -293,6 +328,7 @@ def process_to_conversion(src_path, origin):
     except Exception as e:
         log(f"🚨 Error in process_to_conversion:\n{traceback.format_exc()}")
 
+# === Push Converted Playlists ===
 def push_from_conversion(conv_path):
     try:
         with open(conv_path, "r", encoding="utf-8") as f:
@@ -303,7 +339,7 @@ def push_from_conversion(conv_path):
         for line in lines:
             stripped = line.strip()
             if not stripped.startswith("#") and stripped:
-                folder_key = "android" if "/Library/" in stripped or stripped.startswith("..") else "library"
+                folder_key = "smartphone" if "/PC/" in stripped or stripped.startswith("..") else "pc"
                 target_folder = folders[folder_key]
                 target_path = os.path.join(target_folder, clean_name)
                 with open(target_path, "w", encoding="utf-8") as out:
@@ -317,9 +353,11 @@ def push_from_conversion(conv_path):
     except Exception as e:
         log(f"🚨 Error in push_from_conversion:\n{traceback.format_exc()}")
 
+# === Initial Sync with Comparison ===
 def initial_sync_with_comparison():
-    convert_m3u8_to_m3u(folders["android"])
-    for folder_key, label in [("android", "Android"), ("library", "Library")]:
+    convert_m3u8_to_m3u(folders["pc"])
+    convert_m3u8_to_m3u(folders["smartphone"])
+    for folder_key, label in [("smartphone", "Smartphone"), ("pc", "PC")]:
         for file in os.listdir(folders[folder_key]):
             if file.endswith(".m3u") and not re.search(r"_v\d+\.m3u$", file):
                 full_path = os.path.join(folders[folder_key], file)
@@ -344,9 +382,15 @@ def initial_sync_with_comparison():
                 except Exception as e:
                     log(f"🚨 Initial sync error [{file}]:\n{traceback.format_exc()}")
 
+
+
 # === Watchdog Setup ===
+recently_processed = {}
+recently_pushed_files = {}
+
 class WatchHandler(FileSystemEventHandler):
-    def __init__(self, label): self.label = label
+    def __init__(self, label):
+        self.label = label
 
     def handle_event(self, event):
         if not event.is_directory and event.src_path.endswith(".m3u"):
@@ -363,24 +407,18 @@ class WatchHandler(FileSystemEventHandler):
     def on_created(self, event): self.handle_event(event)
     def on_modified(self, event): self.handle_event(event)
 
-# === Tray Icon Setup ===
-def on_run(): log("▶️ Manual sync triggered"); initial_sync_with_comparison()
+
+
+# === Tray Icon Functions ===
+def on_run(): 
+    log("▶️ Manual sync triggered")
+    initial_sync_with_comparison()
 
 def on_quit(icon):
     observer.stop()
     observer.join()
     log("🛑 Tray app quit by user.")
     icon.stop()
-
-def open_base_folder(icon=None, item=None):
-    try:
-        system = platform.system()
-        if system == "Windows": os.startfile(base)
-        elif system == "Linux": subprocess.Popen(["xdg-open", base])
-        elif system == "Darwin": subprocess.Popen(["open", base])
-        log(f"📂 Opened base folder: {base}")
-    except Exception as e:
-        log(f"🚨 Failed to open base folder: {e}")
 
 def toggle_autostart(icon):
     config = load_config()
@@ -399,39 +437,64 @@ def reset_setup(icon=None, item=None):
         return
     new_config = get_user_config()
     save_config(new_config)
-    global base, MAX_BACKUPS, PROCESS_DELAY, BLOCK_DURATION, ENABLE_AUTOSTART_PROMPT
-    base = new_config["base"]
+
+    # ✅ Validate new paths
+    for key in ["sp_path", "pc_path"]:
+        if not os.path.isdir(new_config[key]):
+            log(f"🚨 Invalid folder path after reset: {new_config[key]}")
+            return
+
+    # ✅ Unpack new config
+    global SP_PATH, PC_PATH, MAX_BACKUPS, PROCESS_DELAY, BLOCK_DURATION, ENABLE_AUTOSTART_PROMPT
+    SP_PATH = new_config["sp_path"]
+    PC_PATH = new_config["pc_path"]
     MAX_BACKUPS = new_config["max_backups"]
     PROCESS_DELAY = new_config["process_delay"]
     BLOCK_DURATION = new_config["block_duration"]
     ENABLE_AUTOSTART_PROMPT = new_config["enable_autostart"]
+    folders["smartphone"] = SP_PATH
+    folders["pc"] = PC_PATH
     apply_autostart_setting(ENABLE_AUTOSTART_PROMPT)
     log("🔄 Configuration reset and applied.")
+    
+
+def open_app_folder(icon=None, item=None):
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(script_dir)
+        elif system == "Linux":
+            subprocess.Popen(["xdg-open", script_dir])
+        elif system == "Darwin":
+            subprocess.Popen(["open", script_dir])
+        log(f"📂 Opened app folder: {script_dir}")
+    except Exception as e:
+        log(f"🚨 Failed to open app folder: {e}")
 
 def create_tray():
     try:
-        icon_path = os.path.join(os.path.dirname(__file__), "playlist_icon.ico")
+        icon_path = os.path.join(script_dir, "playlist_icon.ico")
         image = Image.open(icon_path) if os.path.exists(icon_path) else Image.new('RGB', (64, 64), color='black')
         menu = Menu(
             Item('Run Sync', on_run),
-            Item('Open Folder', open_base_folder),
+            Item('Open App Folder', open_app_folder),
             Item('Toggle Autostart', toggle_autostart),
             Item('Reset Setup', reset_setup),
             Item('Quit', on_quit)
         )
-        icon = Icon("PlaylistConverter", image, "Playlist Sync", menu)
         threading.Thread(target=icon.run, daemon=True).start()
         log("🎧 Tray created successfully")
     except Exception as e:
         log(f"🚨 Tray setup failed: {e}")
+
 
 # === Startup ===
 initial_sync_with_comparison()
 time.sleep(2)
 
 observer = Observer()
-observer.schedule(WatchHandler("Library"), folders["library"], recursive=True)
-observer.schedule(WatchHandler("Android"), folders["android"], recursive=True)
+observer.schedule(WatchHandler("PC"), folders["pc"], recursive=True)
+observer.schedule(WatchHandler("Smartphone"), folders["smartphone"], recursive=True)
 observer.start()
 log("🎧 Watchdog is active. Monitoring changes...")
 

@@ -64,9 +64,8 @@ Syncing across devices:
 - For syncing the playlists with relative paths I use ResilioSync but SyncThing should work too
 
 📁 Folder Structure (Fully Customizable)
-Playlists/                  # Example base folder (user-defined)
-├── Android/                → 📂 Mobile playlists folder (user-defined name & path)
-├── Library/                → 📂 Desktop playlists folder (user-defined name & path)
+SP_Playlists/       # Smartphone playlists → 📂 Mobile playlists folder (user-defined name & path)
+PC_Playlists/ # Desktop playlists → 📂 Desktop playlists folder (user-defined name & path)             
 
 PlaylistConverter/          # App-managed folders (auto-created)
 ├── Conversion/             → Latest converted playlists

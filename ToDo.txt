@@ -1,3 +1,5 @@
 - Better ReadMe
 - Support for AIMP
 - Maybe GUI
+- bigger Icon
+- maybe different icon
