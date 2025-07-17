@@ -50,6 +50,11 @@ This script automatically converts absolute paths to relative ones so your playl
 > 💡 You don’t need to use MusicBee or Poweramp — they’re just examples.  
 
 
+Install dependencies:
+
+pip install -r requirements.txt
+
+
 Different Music players i tried:
 Windows:
 - MediaMonkey -> stores internal playlists in a Database -> can't be overridden via new file

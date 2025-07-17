@@ -1,3 +1,20 @@
+# PlaylistConverter - Sync and convert playlists between PC and Android
+# Copyright (C) 2024 Legandy
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 import os
 import json
 import platform
@@ -7,11 +24,40 @@ import hashlib
 import time
 import threading
 import traceback
+import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pystray import Icon, MenuItem as Item, Menu
 from PIL import Image
 from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+# === Check Dependencies ===
+REQUIRED_MODULES = {
+    "requests": "requests",
+    "pystray": "pystray",
+    "PIL": "Pillow",
+    "watchdog": "watchdog"
+}
+def check_dependencies():
+    missing = []
+    for module, pip_name in REQUIRED_MODULES.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append((module, pip_name))
+
+    if missing:
+        log("🚨 Missing dependencies detected:")
+        for module, pip_name in missing:
+            log(f"❌ {module} (install with: pip install {pip_name})")
+        print("\nPlease install missing dependencies and restart the app.")
+        exit(1)
+    else:
+        log("✅ All dependencies are satisfied.")
+
+check_dependencies()
 
 # === Script Directory ===
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +103,26 @@ def log(msg):
 
 VERSION = "1.0.0"
 log(f"🎧 PlaylistConverter v{VERSION} started")
+
+
+# === Check for Updates ===
+def check_for_updates():
+    try:
+        url = f"https://api.github.com/repos/{"https://github.com/Legandy/PlaylistConverter/"}/releases/latest"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            latest = response.json()["tag_name"].lstrip("v")
+            if latest != VERSION:
+                log(f"🆕 Update available: v{latest} (current: v{VERSION})")
+            else:
+                log(f"✅ You’re running the latest version: v{VERSION}")
+        else:
+            log(f"⚠️ Failed to check for updates: {response.status_code}")
+    except Exception as e:
+        log(f"🚨 Update check error: {e}")
+
+log(f"🎧 PlaylistConverter v{VERSION} started")
+check_for_updates()
 
 # === Save Configuration Function ===
 def save_config(config):
@@ -131,6 +197,10 @@ folders = {
 for name, path in folders.items():
     os.makedirs(path, exist_ok=True)
     log(f"📁 Ensured folder exists: {name} → {path}")
+
+# === Tkinter GUI ===
+
+
 
 # === Autostart Functions ===
 def setup_windows_autostart():
@@ -482,6 +552,7 @@ def create_tray():
             Item('Reset Setup', reset_setup),
             Item('Quit', on_quit)
         )
+        icon = Icon("PlaylistConverter", image, f"PlaylistConverter v{VERSION}", menu)
         threading.Thread(target=icon.run, daemon=True).start()
         log("🎧 Tray created successfully")
     except Exception as e:
@@ -507,3 +578,28 @@ except KeyboardInterrupt:
     observer.stop()
     log("🛑 Stopped by user.")
 observer.join()
+
+# === Command-line Entry ===
+def main():
+    initial_sync_with_comparison()
+    time.sleep(2)
+
+    global observer
+    observer = Observer()
+    observer.schedule(WatchHandler("PC"), folders["pc"], recursive=True)
+    observer.schedule(WatchHandler("Smartphone"), folders["smartphone"], recursive=True)
+    observer.start()
+    log("🎧 Watchdog is active. Monitoring changes...")
+
+    create_tray()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+        log("🛑 Stopped by user.")
+    observer.join()
+
+if __name__ == "__main__":
+    main()

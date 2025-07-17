@@ -1,0 +1,7 @@
+include README.md
+include LICENSE.txt
+include playlist_icon.ico
+include config.json
+recursive-include Logs *.txt
+recursive-include Backups *.m3u
+recursive-include Conversion *.m3u
