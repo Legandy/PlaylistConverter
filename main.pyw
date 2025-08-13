@@ -1,11 +1,10 @@
-# main.py - Updated main entry point with tray support
 import argparse
 import os
 import threading
 from config import load_config, apply_autostart_setting
 from conversion import initial_sync_with_comparison, WatchHandler, folders, log
 from scheduler import start_scheduler  # Fixed import (rename shedular.py to scheduler.py)
-from gui import launch_gui
+from gui_enhanced import launch_setup_gui, launch_main_gui
 from watchdog.observers import Observer
 from conversion import SyncConfig
 
@@ -15,7 +14,7 @@ def launch_setup(profile="default"):
         from config import save_config
         save_config(data, profile_name)
 
-    launch_gui(
+    launch_setup_gui(
         save_callback=save_callback,
         autostart_callback=apply_autostart_setting,
         is_dev=args.dev,
@@ -55,12 +54,14 @@ def main():
     # === Argument Parsing ===
     parser = argparse.ArgumentParser(description="Playlist Converter")
     parser.add_argument("--setup", action="store_true", help="Open setup GUI")
+    parser.add_argument("--gui", action="store_true", help="Launch main GUI window")
     parser.add_argument("--dry-run", action="store_true", help="Enable dry-run mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--dev", action="store_true", help="Enable developer mode")
     parser.add_argument("--profile", type=str, default="default", help="Config profile to load")
     parser.add_argument("--tray", action="store_true", help="Run in system tray mode")
     parser.add_argument("--no-tray", action="store_true", help="Disable system tray (console mode)")
+    parser.add_argument("--console", action="store_true", help="Force console mode")
 
     global args
     args = parser.parse_args()
@@ -68,6 +69,11 @@ def main():
     # === Launch Setup GUI if requested ===
     if args.setup:
         launch_setup(profile=args.profile)
+        return
+
+    # === Launch Main GUI if requested ===
+    if args.gui:
+        launch_main_gui(profile=args.profile)
         return
 
     # === Load Config ===
@@ -106,58 +112,75 @@ def main():
             interval=config["schedule_interval"]
         )
 
-    # === Decide on Tray vs Console Mode ===
+    # === Decide on UI Mode ===
     use_tray = False
+    use_gui = False
+    use_console = False
     
+    # Explicit mode selection
     if args.tray:
         use_tray = True
-    elif args.no_tray:
-        use_tray = False
+    elif args.console or args.no_tray:
+        use_console = True
+    elif args.verbose or args.dev or args.dry_run:
+        # Development/debug modes prefer console
+        use_console = True
     else:
-        # Auto-detect: use tray if available and not in verbose/dev mode
+        # Auto-detect best mode
         try:
             import pystray
-            use_tray = not (args.verbose or args.dev or args.dry_run)
+            # Check if we're in a GUI environment
+            if os.name == 'nt' or os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+                use_tray = True
+            else:
+                use_console = True
         except ImportError:
-            use_tray = False
-            log("ℹ️ pystray not available - running in console mode")
+            log("ℹ️ pystray not available - using console mode")
+            use_console = True
 
     # === Launch Appropriate Mode ===
     if use_tray:
-        # System Tray Mode - run watchdog in background thread
+        # System Tray Mode
         log("🖥️ Starting in system tray mode...")
+        log("💡 Right-click the tray icon for options")
+        log("💡 Use --gui flag to open the main window directly")
         
-        if config.get("use_watchdog", True):
-            def watchdog_thread():
-                launch_main(cfg, config, is_dev=args.dev, dry_run=args.dry_run, verbose=args.verbose)
-            
-            threading.Thread(target=watchdog_thread, daemon=True).start()
-        
-        # Start tray (this blocks until quit)
         try:
-            from tray import start_tray
-            start_tray(profile=args.profile)
+            from tray_enhanced import start_tray_with_watchdog
+            start_tray_with_watchdog(
+                cfg, config, 
+                profile=args.profile,
+                is_dev=args.dev, 
+                dry_run=args.dry_run, 
+                verbose=args.verbose
+            )
         except ImportError:
-            log("⚠️ Tray module not available - falling back to console mode")
-            use_tray = False
+            log("⚠️ Enhanced tray module not available - falling back to console mode")
+            use_console = True
     
-    if not use_tray:
+    if use_console:
         # Console Mode
         log("💻 Starting in console mode...")
+        log("💡 Use --gui to open the graphical interface")
+        log("💡 Use --tray to run in system tray")
         
         if config.get("use_watchdog", True):
             log("🟢 Real-time folder sync active (Watchdog)...")
+            log("💡 Press Ctrl+C to stop")
             launch_main(cfg, config, is_dev=args.dev, dry_run=args.dry_run, verbose=args.verbose)
         else:
-            log("🔕 Watchdog disabled — relying on scheduler or manual sync.")
+            log("🔕 Watchdog disabled — relying on scheduler only")
             
             # Keep alive for scheduler
             if config.get("schedule_interval", "").lower() != "never":
+                log("⏰ Scheduler active - press Ctrl+C to stop")
                 try:
                     while True:
                         pass
                 except KeyboardInterrupt:
                     log("👋 Shutting down...")
+            else:
+                log("✅ Initial sync complete - no background services enabled")
 
 if __name__ == "__main__":
     main()
