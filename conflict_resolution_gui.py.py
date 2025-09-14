@@ -1,11 +1,12 @@
-# conflict_gui.py - GUI for conflict resolution and duplicate management
+# conflict_resolution_gui.py - GUI for conflict resolution and duplicate management
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
-from conflict_resolver import ConflictResolver, ConflictResolution
-from enhanced_conversion import detect_and_handle_conflicts, scan_all_playlists_for_duplicates, remove_duplicates_from_playlist
+from conflict_resolution_system import ConflictResolver, ConflictResolution  # Fixed import
+from conversion import detect_and_handle_conflicts, scan_all_playlists_for_duplicates, remove_duplicates_from_playlist  # Fixed imports
 from conversion import SyncConfig, folders
 from config import load_config
+import os
 
 class ConflictResolutionGUI:
     """GUI for managing playlist conflicts and duplicates"""
@@ -358,7 +359,7 @@ class ConflictResolutionGUI:
         
         def resolve_thread():
             try:
-                from enhanced_conversion import handle_single_conflict
+                from conversion import handle_single_conflict  # Fixed import
                 
                 # Temporarily set the resolution strategy
                 original_resolution = self.cfg.conflict_resolution

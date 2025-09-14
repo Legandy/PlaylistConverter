@@ -1,12 +1,12 @@
-# gui_with_conflict_management.py - Enhanced main GUI with conflict management
+# main_gui.py - Enhanced main GUI with conflict management
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 from datetime import datetime
 from config import load_config, save_config
-from enhanced_conversion import detect_and_handle_conflicts, scan_all_playlists_for_duplicates
+from conversion import detect_and_handle_conflicts, scan_all_playlists_for_duplicates  # Fixed import
 from conversion import SyncConfig, folders
-from conflict_gui import launch_conflict_gui
+from conflict_resolution_gui import launch_conflict_gui  # Fixed import
 
 class PlaylistConverterMainGUI:
     """Enhanced main GUI with conflict management features"""
@@ -297,7 +297,7 @@ class PlaylistConverterMainGUI:
         """Trigger manual sync"""
         def sync_thread():
             try:
-                from enhanced_conversion import initial_sync_with_comparison
+                from conversion import initial_sync_with_comparison  # Fixed import
                 
                 self.add_log("🔄 Manual sync started...")
                 self.update_status_indicator("Syncing...")

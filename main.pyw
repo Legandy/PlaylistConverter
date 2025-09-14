@@ -3,8 +3,9 @@ import os
 import threading
 from config import load_config, apply_autostart_setting
 from conversion import initial_sync_with_comparison, WatchHandler, folders, log
-from scheduler import start_scheduler  # Fixed import (rename shedular.py to scheduler.py)
-from gui_enhanced import launch_setup_gui, launch_main_gui
+from scheduler import start_scheduler
+from main_gui import launch_enhanced_main_gui as launch_main_gui  # Fixed import
+from setup_gui import launch_setup_gui  # You'll need to create this or rename existing GUI file
 from watchdog.observers import Observer
 from conversion import SyncConfig
 
@@ -146,7 +147,7 @@ def main():
         log("💡 Use --gui flag to open the main window directly")
         
         try:
-            from tray_enhanced import start_tray_with_watchdog
+            from tray import start_tray_with_watchdog  # Fixed import
             start_tray_with_watchdog(
                 cfg, config, 
                 profile=args.profile,
@@ -155,7 +156,7 @@ def main():
                 verbose=args.verbose
             )
         except ImportError:
-            log("⚠️ Enhanced tray module not available - falling back to console mode")
+            log("⚠️ Tray module not available - falling back to console mode")
             use_console = True
     
     if use_console:
